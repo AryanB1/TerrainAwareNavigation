@@ -64,14 +64,6 @@ pip install --upgrade pip
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install numpy matplotlib jupyter scikit-learn
 
-# -------------------------
-# ROS2 Workspace Setup
-# -------------------------
-echo "[*] Creating ROS2 workspace in $WORKSPACE"
-mkdir -p "$WORKSPACE/src"
-cd "$WORKSPACE"
-colcon build
-
 echo "source $WORKSPACE/install/setup.bash" >> ~/.bashrc
 echo "source $VENV_DIR/bin/activate" >> ~/.bashrc
 
@@ -80,5 +72,3 @@ echo "source $VENV_DIR/bin/activate" >> ~/.bashrc
 # -------------------------
 echo "Setup complete:"
 echo "run: source ~/.bashrc"
-echo "Workspace path: $WORKSPACE"
-echo "Python venv: $VENV_DIR"
