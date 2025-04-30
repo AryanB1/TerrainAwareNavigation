@@ -1,0 +1,50 @@
+/**:
+  ros__parameters:
+    # Terrain detection parameters
+    slope_threshold: 0.5
+    roughness_threshold: 0.2
+    use_ml_classification: false
+    ml_model_path: ""
+    debug_mode: true
+
+    # Control parameters for different terrain types
+    control:
+      flat:
+        max_linear_velocity: 0.5
+        max_angular_velocity: 0.5
+        acceleration_limit: 0.2
+        deceleration_limit: 0.3
+        stability_factor: 1.0
+      rough:
+        max_linear_velocity: 0.3
+        max_angular_velocity: 0.3
+        acceleration_limit: 0.15
+        deceleration_limit: 0.25
+        stability_factor: 0.7
+      steep:
+        max_linear_velocity: 0.2
+        max_angular_velocity: 0.2
+        acceleration_limit: 0.1
+        deceleration_limit: 0.3
+        stability_factor: 0.5
+      slippery:
+        max_linear_velocity: 0.2
+        max_angular_velocity: 0.15
+        acceleration_limit: 0.05
+        deceleration_limit: 0.1
+        stability_factor: 0.5
+      soft:
+        max_linear_velocity: 0.3
+        max_angular_velocity: 0.3
+        acceleration_limit: 0.15
+        deceleration_limit: 0.2
+        stability_factor: 0.8
+
+    # Topics
+    camera_topic: "/camera/image_raw"
+    lidar_topic: "/lidar/points"
+    imu_topic: "/imu/data"
+    odom_topic: "/odom"
+    cmd_vel_topic: "/cmd_vel"
+    terrain_topic: "/terrain_type"
+    control_rate: 10.0  # Hz
