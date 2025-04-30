@@ -71,4 +71,4 @@ echo "source $VENV_DIR/bin/activate" >> ~/.bashrc
 # Done
 # -------------------------
 echo "Setup complete:"
-echo "run: source ~/.bashrc"
+echo "run: source ~/.bashrc and colcon build"

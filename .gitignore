@@ -35,3 +35,7 @@ Thumbs.db
 *.tmp
 
 *.deb
+*.cmake
+*.stamp
+*.dsv
+build/*
