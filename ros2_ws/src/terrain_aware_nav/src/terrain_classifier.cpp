@@ -10,6 +10,9 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <opencv2/opencv.hpp>
+#include <tensorflow/lite/interpreter.h>
+#include <tensorflow/lite/kernels/register.h>
+#include <tensorflow/lite/model.h>
 
 namespace terrain_aware_nav
 {
@@ -39,8 +42,68 @@ bool TerrainClassifier::initialize()
     node_->get_logger(),
     "TerrainClassifier initialized with ML classification: %s",
     use_ml_classification_ ? "enabled" : "disabled");
+    
+  // Load TensorFlow Lite model if ML classification is enabled
+  if (use_ml_classification_) {
+    if (!loadTFLiteModel()) {
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Failed to load TFLite model. Falling back to rule-based classification.");
+      use_ml_classification_ = false;
+    } else {
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "TensorFlow Lite model loaded successfully from: %s",
+        model_path_.c_str());
+    }
+  }
 
   return true;
+}
+
+// New method to load TensorFlow Lite model
+bool TerrainClassifier::loadTFLiteModel()
+{
+  if (model_path_.empty()) {
+    RCLCPP_ERROR(node_->get_logger(), "No model path provided for TFLite model");
+    return false;
+  }
+
+  try {
+    // Load model from file
+    model_ = tflite::FlatBufferModel::BuildFromFile(model_path_.c_str());
+    if (!model_) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to load TFLite model from: %s", model_path_.c_str());
+      return false;
+    }
+    
+    // Create interpreter
+    tflite::ops::builtin::BuiltinOpResolver resolver;
+    tflite::InterpreterBuilder builder(*model_, resolver);
+    builder(&interpreter_);
+    
+    if (!interpreter_) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to create TFLite interpreter");
+      return false;
+    }
+    
+    // Allocate tensors and check model input/output details
+    if (interpreter_->AllocateTensors() != kTfLiteOk) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to allocate tensors in TFLite interpreter");
+      return false;
+    }
+    
+    // Log model input and output details for debugging
+    RCLCPP_DEBUG(node_->get_logger(), "TFLite model loaded successfully");
+    RCLCPP_DEBUG(node_->get_logger(), "Input tensor count: %d", interpreter_->inputs().size());
+    RCLCPP_DEBUG(node_->get_logger(), "Output tensor count: %d", interpreter_->outputs().size());
+    
+    return true;
+    
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(node_->get_logger(), "Exception while loading TFLite model: %s", e.what());
+    return false;
+  }
 }
 
 TerrainFeatures TerrainClassifier::extractFeatures(
@@ -383,17 +446,187 @@ TerrainType TerrainClassifier::applyClassificationRules(const TerrainFeatures & 
   return TerrainType::UNKNOWN;
 }
 
+// Enhanced ML-based classification
 TerrainType TerrainClassifier::applyMLClassification(const TerrainFeatures & features)
 {
-  // In a real implementation, this would load and use a trained ML model
-  // Here we just return UNKNOWN since this is just a demonstration
+  // Check if we can use TensorFlow Lite model
+  if (use_ml_classification_ && interpreter_) {
+    // Prepare input features for the model
+    std::vector<float> input_features;
+    
+    // Add roughness and slope
+    input_features.push_back(static_cast<float>(features.roughness));
+    input_features.push_back(static_cast<float>(features.slope));
+    
+    // Add visual features if available
+    for (const auto& feature : features.visual_features) {
+      input_features.push_back(static_cast<float>(feature));
+    }
+    
+    // Run TensorFlow Lite inference
+    return runTFLiteInference(input_features);
+  }
   
-  RCLCPP_DEBUG(
-    node_->get_logger(),
-    "ML classification not implemented in this demo");
-  
-  // Just return UNKNOWN to fall back to rule-based
-  return TerrainType::UNKNOWN;
+  // Fall back to the simpler ML-like classification if TFLite model isn't available
+  try {
+    // First check if we have visual features
+    if (features.visual_features.size() < 10) {
+      RCLCPP_WARN(node_->get_logger(), "Not enough visual features for ML classification");
+      return TerrainType::UNKNOWN;
+    }
+    
+    // Extract key features for classification
+    double roughness = features.roughness;
+    double slope = features.slope;
+    double green_ratio = 0.0;
+    double blue_ratio = 0.0;
+    double yellow_ratio = 0.0;
+    
+    // Get color ratios if available
+    if (features.visual_features.size() >= 13) {
+      green_ratio = features.visual_features[12];
+      blue_ratio = features.visual_features[13];
+      if (features.visual_features.size() >= 14) {
+        yellow_ratio = features.visual_features[14];
+      }
+    }
+    
+    // Simple decision tree classifier based on feature thresholds
+    // These would normally be learned from training data
+    
+    // First check for obstacles (high roughness)
+    if (roughness > 0.8) {
+      classification_confidence_ = 0.85;
+      return TerrainType::OBSTACLE;
+    }
+    
+    // Check for steep terrain
+    if (slope > 0.65) {
+      classification_confidence_ = 0.75 + 0.2 * slope;
+      return TerrainType::STEEP;
+    }
+    
+    // Check for water/slippery surfaces (blue dominant)
+    if (blue_ratio > 0.35 && roughness < 0.3) {
+      classification_confidence_ = 0.7 + 0.3 * blue_ratio;
+      return TerrainType::SLIPPERY;
+    }
+    
+    // Check for vegetation/grass (green dominant)
+    if (green_ratio > 0.4) {
+      classification_confidence_ = 0.75 + 0.25 * green_ratio;
+      return TerrainType::SOFT;
+    }
+    
+    // Check for sand/dirt (yellow/brown dominant)
+    if (yellow_ratio > 0.3) {
+      if (roughness > 0.4) {
+        classification_confidence_ = 0.65 + 0.2 * roughness;
+        return TerrainType::ROUGH;
+      } else {
+        classification_confidence_ = 0.7;
+        return TerrainType::SOFT;
+      }
+    }
+    
+    // Check for rough terrain
+    if (roughness > 0.5) {
+      classification_confidence_ = 0.6 + 0.3 * roughness;
+      return TerrainType::ROUGH;
+    }
+    
+    // If smooth and not steep, classify as flat
+    if (roughness < 0.25 && slope < 0.2) {
+      classification_confidence_ = 0.8;
+      return TerrainType::FLAT;
+    }
+    
+    // If no clear classification, return unknown
+    classification_confidence_ = 0.5;
+    return TerrainType::UNKNOWN;
+    
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(
+      node_->get_logger(), 
+      "ML classification error: %s", e.what());
+    return TerrainType::UNKNOWN;
+  }
+}
+
+// New method to run TensorFlow Lite inference
+TerrainType TerrainClassifier::runTFLiteInference(const std::vector<float> & input_features)
+{
+  try {
+    // Get input tensor
+    int input_tensor_idx = interpreter_->inputs()[0];
+    TfLiteTensor* input_tensor = interpreter_->tensor(input_tensor_idx);
+    
+    // Get input dimensions
+    TfLiteIntArray* input_dims = input_tensor->dims;
+    int input_size = 1;
+    for (int i = 0; i < input_dims->size; i++) {
+      input_size *= input_dims->data[i];
+    }
+    
+    // Check if input size matches our features
+    if (input_size != static_cast<int>(input_features.size())) {
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "Input feature size mismatch: got %zu, expected %d",
+        input_features.size(), input_size);
+      return TerrainType::UNKNOWN;
+    }
+    
+    // Copy input data to model input tensor
+    float* input_data = interpreter_->typed_input_tensor<float>(0);
+    for (size_t i = 0; i < input_features.size(); i++) {
+      input_data[i] = input_features[i];
+    }
+    
+    // Run inference
+    if (interpreter_->Invoke() != kTfLiteOk) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to invoke TFLite interpreter");
+      return TerrainType::UNKNOWN;
+    }
+    
+    // Get output tensor
+    int output_tensor_idx = interpreter_->outputs()[0];
+    TfLiteTensor* output_tensor = interpreter_->tensor(output_tensor_idx);
+    float* output_data = interpreter_->typed_output_tensor<float>(0);
+    
+    // Find the class with highest probability
+    int num_classes = output_tensor->dims->data[output_tensor->dims->size - 1];
+    int predicted_class = 0;
+    float highest_prob = 0.0f;
+    
+    for (int i = 0; i < num_classes; i++) {
+      if (output_data[i] > highest_prob) {
+        highest_prob = output_data[i];
+        predicted_class = i;
+      }
+    }
+    
+    // Convert predicted class to TerrainType
+    // Assuming the model's output classes map to TerrainType enum:
+    // 0 = UNKNOWN, 1 = FLAT, 2 = ROUGH, etc.
+    TerrainType terrain_type = static_cast<TerrainType>(predicted_class);
+    
+    // Set confidence from the model's probability
+    classification_confidence_ = static_cast<double>(highest_prob);
+    
+    RCLCPP_DEBUG(
+      node_->get_logger(),
+      "TFLite inference result: class %d (%s) with confidence %.2f",
+      predicted_class,
+      TerrainDetector::terrainTypeToString(terrain_type).c_str(),
+      classification_confidence_);
+    
+    return terrain_type;
+    
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(node_->get_logger(), "Exception during TFLite inference: %s", e.what());
+    return TerrainType::UNKNOWN;
+  }
 }
 
 double TerrainClassifier::getClassificationConfidence() const

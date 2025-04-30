@@ -25,14 +25,23 @@ find_package(PCL REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(OpenCV REQUIRED)
 
+# TensorFlow Lite dependencies
+set(TFLITE_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tflite")
+set(TFLITE_LIB_DIR "${TFLITE_ROOT_DIR}/lib")
+set(TFLITE_INCLUDE_DIR "${TFLITE_ROOT_DIR}/include")
+
 # Include PCL headers
 include_directories(
   include
   ${PCL_INCLUDE_DIRS}
+  ${TFLITE_INCLUDE_DIR}
 )
 
 # Link PCL libraries for the targets
-link_directories(${PCL_LIBRARY_DIRS})
+link_directories(
+  ${PCL_LIBRARY_DIRS}
+  ${TFLITE_LIB_DIR}
+)
 add_definitions(${PCL_DEFINITIONS})
 
 # Add terrain detection library
@@ -62,6 +71,7 @@ add_library(terrain_classifier
 target_include_directories(terrain_classifier PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+  ${TFLITE_INCLUDE_DIR}
 )
 ament_target_dependencies(terrain_classifier
   rclcpp
@@ -73,6 +83,11 @@ ament_target_dependencies(terrain_classifier
   PCL
   pcl_conversions
   OpenCV
+)
+target_link_libraries(terrain_classifier
+  ${TFLITE_LIB_DIR}/libtensorflow-lite.a
+  dl
+  pthread
 )
 
 # Add adaptive controller library
