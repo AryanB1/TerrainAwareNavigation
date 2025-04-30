@@ -32,41 +32,31 @@ public:
   explicit AdaptiveController(const rclcpp::Node::SharedPtr & node);
   virtual ~AdaptiveController();
 
-  // Initialize the controller with parameters
   bool initialize();
   
-  // Compute velocity commands based on terrain and desired motion
   geometry_msgs::msg::Twist computeVelocityCommand(
     const geometry_msgs::msg::Twist & desired_cmd,
     const TerrainType & terrain_type,
     const nav_msgs::msg::Odometry::SharedPtr & current_odom);
     
-  // Update control parameters based on terrain type
   void updateControlParameters(const TerrainType & terrain_type);
 
 private:
-  // Node handle
   rclcpp::Node::SharedPtr node_;
   
-  // Control parameter sets for different terrain types
   std::unordered_map<TerrainType, ControlParameters> control_params_map_;
   
-  // Current active control parameters
   ControlParameters active_params_;
   
-  // Default control parameters
   ControlParameters default_params_;
   
-  // Methods for specific terrain adaptations
   geometry_msgs::msg::Twist adaptForRoughTerrain(const geometry_msgs::msg::Twist & cmd);
   geometry_msgs::msg::Twist adaptForSteepTerrain(const geometry_msgs::msg::Twist & cmd);
   geometry_msgs::msg::Twist adaptForSlipperyTerrain(const geometry_msgs::msg::Twist & cmd);
   geometry_msgs::msg::Twist adaptForSoftTerrain(const geometry_msgs::msg::Twist & cmd);
   
-  // Clamp velocity within limits
   geometry_msgs::msg::Twist limitVelocity(const geometry_msgs::msg::Twist & cmd);
   
-  // Last commanded velocity 
   geometry_msgs::msg::Twist last_cmd_;
 };
 
